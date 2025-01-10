@@ -1,5 +1,78 @@
 local json = {}
 
+local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+local function base64Encode(str)
+    local output = {}
+    local bytes = {}
+    
+    for p, c in utf8.codes(str) do
+        local char = utf8.char(c)
+        for i = 1, #char do
+            bytes[#bytes + 1] = char:byte(i)
+        end
+    end
+    
+    for i = 1, #bytes, 3 do
+        local a = bytes[i]
+        local b = bytes[i + 1] or 0
+        local c = bytes[i + 2] or 0
+        
+        local n = bit32.lshift(a, 16) + bit32.lshift(b, 8) + c
+        
+        output[#output + 1] = b64chars:sub(bit32.rshift(n, 18) % 64 + 1, bit32.rshift(n, 18) % 64 + 1)
+        output[#output + 1] = b64chars:sub(bit32.rshift(n, 12) % 64 + 1, bit32.rshift(n, 12) % 64 + 1)
+        output[#output + 1] = (b == 0) and '=' or b64chars:sub(bit32.rshift(n, 6) % 64 + 1, bit32.rshift(n, 6) % 64 + 1)
+        output[#output + 1] = (c == 0) and '=' or b64chars:sub(n % 64 + 1, n % 64 + 1)
+    end
+    return table.concat(output)
+end
+
+local function base64Decode(str)
+    str = str:gsub('[^'..b64chars..'=]', '')
+    local bytes = {}
+    
+    for i = 1, #str, 4 do
+        local n = 0
+        for j = 0, 3 do
+            local char = str:sub(i + j, i + j)
+            if char ~= '=' then
+                n = n + bit32.lshift(b64chars:find(char) - 1, (3 - j) * 6)
+            end
+        end
+        bytes[#bytes + 1] = bit32.rshift(n, 16)
+        if str:sub(i + 2, i + 2) ~= '=' then
+            bytes[#bytes + 1] = bit32.band(bit32.rshift(n, 8), 0xFF)
+            if str:sub(i + 3, i + 3) ~= '=' then
+                bytes[#bytes + 1] = bit32.band(n, 0xFF)
+            end
+        end
+    end
+    
+    local chars = {}
+    local i = 1
+    while i <= #bytes do
+        local byte = bytes[i]
+        local width = 1
+        if byte >= 0xC0 and byte < 0xE0 then
+            width = 2
+        elseif byte >= 0xE0 and byte < 0xF0 then
+            width = 3
+        elseif byte >= 0xF0 then
+            width = 4
+        end
+        
+        local char_bytes = {}
+        for j = 1, width do
+            char_bytes[j] = bytes[i + j - 1]
+        end
+        chars[#chars + 1] = utf8.char(table.unpack(char_bytes))
+        i = i + width
+    end
+    
+    return table.concat(chars)
+end
+
 local escapes = {
 	["\\"] = "\\",
 	["\""] = "\"",
@@ -35,12 +108,12 @@ local function encodeNumber(num)
 	return tostring(num)
 end
 
-local function encodeTable(tbl, pretty, indentLevel, seen)
+local function encodeTable(tbl, encodeInstancePaths, pretty, indentLevel, seen)
 	assert(seen[tbl] == nil, "Circular reference")
 	seen[tbl] = true
 	local isArray = #tbl > 0
 	local result = {}
-	local indent = pretty and string.rep("  ", indentLevel) or ""
+	local indent = pretty and string.rep(" ", indentLevel) or ""
 	local newline = pretty and "\n" or ""
 	local separator = pretty and ": " or ":"
 	local delimiter = pretty and ",\n" or ","
@@ -51,7 +124,7 @@ local function encodeTable(tbl, pretty, indentLevel, seen)
 			return "[]"
 		end
 		for i, v in ipairs(tbl) do
-			table.insert(result, (pretty and indent .. "  " or "") .. json.encode(v, pretty, indentLevel + 1, seen))
+			table.insert(result, (pretty and indent .. " " or "") .. json.encode(v, pretty, indentLevel + 1, encodeInstancePaths, seen))
 		end
 		seen[tbl] = nil
 		return "[" .. newline .. table.concat(result, delimiter) .. (pretty and newline .. indent or "") .. "]"
@@ -61,7 +134,7 @@ local function encodeTable(tbl, pretty, indentLevel, seen)
 			hasEntries = true
 			assert(type(key) == "string", "Table keys must be strings")
 			local pair = encodeString(key) .. separator .. json.encode(value, pretty, indentLevel + 1, seen)
-			table.insert(result, (pretty and indent .. "  " or "") .. pair)
+			table.insert(result, (pretty and indent .. " " or "") .. pair)
 		end
 		seen[tbl] = nil
 		if not hasEntries then
@@ -71,8 +144,25 @@ local function encodeTable(tbl, pretty, indentLevel, seen)
 	end
 end
 
-local function encodeInstance()
-	return '"Instance"'
+local function encodeInstance(instance, encodeInstancePaths)
+    if instance.Parent == nil or instance:GetFullName() == instance.Name or not encodeInstancePaths then
+        return '"[Instance nil]"'
+    end
+
+    local instances = {}
+    local inst = instance
+
+    while true do
+        if inst == nil then return '"[Instance nil]"' end
+        if inst == game then break end
+
+        table.insert(instances, 1, base64Encode(inst.Name))
+        inst = inst.Parent
+    end
+
+    local path = table.concat(instances, ".")
+
+    return `"[Instance {path}]"`
 end
 
 local function encodeFunction()
@@ -262,6 +352,27 @@ local function decodeCFrame(str, index)
     return CFrame.new(unpack(match)), i
 end
 
+local function decodeInstance(str, index)
+    local instanceStr, i = decodeString(str, index)
+    local path = instanceStr:match("%[Instance (.*)%]")
+    if path == "nil" then
+        return nil, i
+    end
+
+    local instances = path:split(".")
+    local inst = game
+
+    for _, v in ipairs(instances) do
+        print(inst, base64Decode(v))
+        inst = inst:FindFirstChild(base64Decode(v))
+        if inst == nil then
+            return nil, i
+        end
+    end
+
+    return inst, i
+end
+
 local function startsWith(str: string, index: number, value: string)
     local sub = str:sub(index):sub(1, #value)
     return sub == value
@@ -283,6 +394,8 @@ decodeValue = function(str, index)
             return decodeUDim2(str, index)
         elseif startsWith(str, index, '"[CFrame') then
             return decodeCFrame(str, index)
+        elseif startsWith(str, index, '"[Instance') then
+            return decodeInstance(str, index)
         end
 
 		return decodeString(str, index)
@@ -305,14 +418,15 @@ decodeValue = function(str, index)
 	return
 end
 
-function json.encode(value: {any}, pretty: boolean?, indentLevel: number?, seen:{ [{string}]: boolean }?)
+function json.encode(value: {any}, pretty: boolean?, indentLevel: number?, encodeInstancePaths: boolean, seen:{ [{string}]: boolean }?)
 	seen = seen or {}
     pretty = pretty or false
 	indentLevel = indentLevel or 2
+    encodeInstancePaths = encodeInstancePaths or false
 	local valueType = typeof(value)
 	local encoder = encoders[valueType]
 	assert(encoder, "Unsupported data type: " .. valueType)
-	return encoder(value, pretty, indentLevel, seen)
+	return encoder(value, encodeInstancePaths, pretty, indentLevel, seen)
 end
 
 function json.decode(str: string)

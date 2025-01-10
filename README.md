@@ -50,7 +50,7 @@ the library supports standard json types (`string`, `number`, `boolean`, `null`,
 - `UDim2`  
 - `Color3`  
 - `CFrame`  
-- `Instance` (serialized as `"Instance"`)  
+- `Instance` (serialized as `"[Instance {base64Name.base64Name.etc.}]"`, supports unicode names.)  
 - functions (serialized as `"function"`)  
 
 ## configuration  
@@ -59,12 +59,13 @@ no configuration is required to use the library, but `json.encode` supports opti
 ```lua  
 function json.encode(value: any, pretty: boolean?, indentLevel: number?): string
 ```  
-- `pretty` (boolean): enables pretty printed json output. defaults to `false`.  
-- `indentLevel` (number): controls the initial indentation level. defaults to `2`.  
+- `pretty` (boolean): enables pretty printed json output. defaults to `false`.
+- `indentLevel` (number): controls the initial indentation level. defaults to `2`.
+- `encodeInstancePaths` (boolean): controls whether instance paths are encoded. defaults to `false`.
 
 ## api  
 
-### `json.encode(value: any, pretty?: boolean, indentLevel?: number): string`  
+### `json.encode(value: any, pretty: boolean?, indentLevel: number?, encodeInstancePaths: boolean?): string`  
 
 encodes a luau value into a json string.  
 
