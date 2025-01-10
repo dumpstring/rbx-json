@@ -57,7 +57,7 @@ the library supports standard json types (`string`, `number`, `boolean`, `null`,
 
 no configuration is required to use the library, but `json.encode` supports optional arguments:  
 ```lua  
-function json.encode(value: any, pretty: boolean?, indentLevel: number?): string
+function json.encode(value: any, pretty: boolean?, indentLevel: number?, encodeInstancePaths: boolean?): string
 ```  
 - `pretty` (boolean): enables pretty printed json output. defaults to `false`.
 - `indentLevel` (number): controls the initial indentation level. defaults to `2`.
