@@ -1,0 +1,6 @@
+{
+  "name": "rbx-json",
+  "tree": {
+    "$path": "./json.luau"
+  }
+}
