@@ -43,7 +43,7 @@ print(decoded.position) -- Vector3.new(1, 2, 3)
 
 ## supported data types  
 
-the library supports standard json types (`string`, `number`, `boolean`, `null`, `array`, `object`) and additional Roblox specific types:  
+the library supports standard json types (`string`, `number`, `boolean`, `null`, `array`) and additional Roblox specific types:  
 - `Vector2`  
 - `Vector3`  
 - `UDim`  
